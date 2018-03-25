@@ -1,3 +1,7 @@
+# Code from Yugang Zhang part of pyCHX
+# https://github.com/NSLS-II-CHX/pyCHX/blob/master/pyCHX/chx_compress.py
+# copied here for experimentation
+
 import os,shutil
 from glob import iglob
 
