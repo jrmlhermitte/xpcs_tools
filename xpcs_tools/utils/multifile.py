@@ -39,22 +39,21 @@ class Multifile2:
 
     '''
     HEADER_SIZE = 1024
-    def __init__(self, filename, mode='rb', rows=None, cols=None, nbytes=4):
+    def __init__(self, filename, numimgs, mode='rb', nbytes=4):
         '''
             Prepare a file for reading or writing.
             mode : either 'rb' or 'wb'
+            numimgs: num images
         '''
         if mode != 'rb' and mode != 'wb':
             raise ValueError("Error, mode must be 'rb' or 'wb'"
                              "got : {}".format(mode))
+        self.beg = 0
+        self.end = numimgs-1
+        self.numimgs = numimgs
         self._filename = filename
         self._mode = mode
-        # cursor position
-        self._cur = 0
 
-        # these are only necessary for writing
-        self._rows = rows
-        self._cols = cols
         self._nbytes = nbytes
         if nbytes == 2:
             self._dtype = '<i2'
@@ -68,16 +67,51 @@ class Multifile2:
             self._fd = np.memmap(filename, dtype='c')
         elif mode == 'wb':
             self._fd = open(filename, "wb")
+        # frame number currently on
+        self.index()
 
+        # these are only necessary for writing
+        hdr = self._read_header(0)
+        self._rows = hdr['rows']
+        self._cols = hdr['cols']
+
+    def rdframe(self, n):
+        # read header then image
+        hdr = self._read_header(n)
+        pos, vals = self._read_raw(n)
+        img = np.zeros((self._rows*self._cols,))
+        img[pos] = vals
+        return img.reshape((self._rows, self._cols))
+
+    def rdrawframe(self, n):
+        # read header then image
+        hdr = self._read_header(n)
+        return self._read_raw(n)
 
     def rdchunk(self):
         ''' read the next chunk'''
         header = self._fd.read(1024)
 
-    def _read_header(self):
+    def index(self):
+        print('indexing file...')
+        cur = 0
+        self.frame_indexes = list()
+        for i in range(self.numimgs):
+            self.frame_indexes.append(cur)
+            # first get dlen
+            dlen = np.frombuffer(self._fd[cur+152:cur+156], dtype=self._dtype)[0]
+            cur += 1024 + dlen*6
+        print("done.")
+
+
+
+    def _read_header(self, n):
         ''' Read header from current seek position.'''
+        if n > self.numimgs:
+            raise KeyError("Error, only {} frames, asked for {}".format(self.numimgs, n))
         # read in bytes
-        header_raw = self._fd[self._cur:self._cur + self.HEADER_SIZE]
+        cur = self.frame_indexes[n]
+        header_raw = self._fd[cur:cur + self.HEADER_SIZE]
         header = dict()
         header['rows'] = np.frombuffer(header_raw[108:112], dtype=self._dtype)[0]
         header['cols'] = np.frombuffer(header_raw[112:116], dtype=self._dtype)[0]
@@ -87,28 +121,35 @@ class Multifile2:
               #.format(header['dlen'], header['rows'], header['cols'],
                       #header['nbytes']))
 
-        self._cur += self.HEADER_SIZE
         self._dlen = header['dlen']
         self._nbytes = header['nbytes']
 
         return header
 
-    def _read_raw(self):
+    def _read_raw(self, n):
         ''' Read from raw.
             Reads from current cursor in file.
         '''
-        dlen = self._dlen
+        if n > self.numimgs:
+            raise KeyError("Error, only {} frames, asked for {}".format(self.numimgs, n))
+        cur = self.frame_indexes[n] + 1024
+        dlen = self._read_header(n)['dlen']
 
-        pos = self._fd[self._cur: self._cur+dlen*4]
-        self._cur += dlen*4
+        pos = self._fd[cur: cur+dlen*4]
+        cur += dlen*4
         pos = np.frombuffer(pos, dtype='<i4')
 
         # TODO: 2-> nbytes
-        vals = self._fd[self._cur: self._cur+dlen*2]
-        self._cur += dlen*2
+        vals = self._fd[cur: cur+dlen*2]
+        # not necessary
+        cur += dlen*2
         vals = np.frombuffer(vals, dtype=self._dtype)
 
         return pos, vals
+
+    def seekimg(self, n):
+        # not needed
+        pass
 
     def _write_header(self, dlen, rows, cols):
         ''' Write header at current position.'''

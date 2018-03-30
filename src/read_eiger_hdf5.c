@@ -66,7 +66,7 @@ int main (void){
          * the dynamic allocation must be done in steps.
          */
         space = H5Dget_space (dset);
-        ndims = H5Sget_simple_extent_dims (space, dims, NULL);
+        //ndims = H5Sget_simple_extent_dims (space, dims, NULL);
     
         /*
          * Allocate array of pointers to two-dimensional arrays (the
