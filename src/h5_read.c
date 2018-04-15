@@ -1,33 +1,21 @@
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
- * Copyright by The HDF Group.                                               *
- * Copyright by the Board of Trustees of the University of Illinois.         *
- * All rights reserved.                                                      *
- *                                                                           *
- * This file is part of HDF5.  The full HDF5 copyright notice, including     *
- * terms governing use, modification, and redistribution, is contained in    *
- * the COPYING file, which can be found at the root of the source code       *
- * distribution tree, or in https://support.hdfgroup.org/ftp/HDF5/releases.  *
- * If you do not have access to either file, you may request a copy from     *
- * help@hdfgroup.org.                                                        *
- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-
 /*
- *   This example reads hyperslab from the SDS.h5 file
- *   created by h5_write.c program into two-dimensional
- *   plane of the three-dimensional array.
- *   Information about dataset in the SDS.h5 file is obtained.
+ * This file reads an EIGER file and compresses it.
+ * The example was taken from
+ * https://support.hdfgroup.org/ftp/HDF5/examples/introductory/C/h5_hyperslab.c
+ * where one reads a hyperslab from a data set.
  */
+
+// TODO : read in chunks, maybe 10 frames at a time, is there speedup?
+// TODO : Use GPU acceleration for sparse format?
+// TODO : approximate how sparse the array is?
+// TODO : extract other simple statistics, how to add plugins?
+//      This might be something to discuss with Faisal
 
 #include "hdf5.h"
 #include <stdlib.h>
 
 #define H5FILE_NAME "/home/lhermitte/research/projects/xpcs-aps-chx-project/sample_data/flow10crlT0_EGhtd_011_66/new/flow10crlT0_EGhtd_011_66_master.h5"
 #define DATASETNAME "entry/data_000001"
-#define NX_SUB  3           /* hyperslab dimensions */
-#define NY_SUB  4
-#define NX 7           /* output buffer dimensions */
-#define NY 7
-#define NZ  3
 #define RANK         3
 #define RANK_OUT     3
 
@@ -62,18 +50,8 @@ main (void)
     int *valbuffer = (int *)malloc(10000000*sizeof(unsigned short int));
     int dlen;
 
-    //int         data_out[NX][NY][NZ ]; /* output buffer */
 
     int          i, j, k, status_n, rank;
-
-    /*
-    for (j = 0; j < NX; j++) {
-	for (i = 0; i < NY; i++) {
-	    for (k = 0; k < NZ ; k++)
-		data_out[j][i][k] = 0;
-	}
-    }
-    */
 
     /*
      * Open the file and the dataset.
@@ -82,6 +60,9 @@ main (void)
 
     char *dataset_name = malloc(80);
     int dset_number;
+    int image_number;
+    image_number = 0;
+
     for (dset_number = 0; dset_number < 10; dset_number++){
         sprintf(dataset_name, "%s%06d", "entry/data_", dset_number);
         dataset = H5Dopen2(file, dataset_name, H5P_DEFAULT);
@@ -92,6 +73,7 @@ main (void)
          */
         datatype  = H5Dget_type(dataset);     /* datatype handle */
         t_class     = H5Tget_class(datatype);
+        /*
         if (t_class == H5T_INTEGER){
             printf("Data set has INTEGER type \n");
         }else{
@@ -103,6 +85,7 @@ main (void)
         }else{
             printf("Not Little endian order \n");
         }
+        */
     
         size  = H5Tget_size(datatype);
         printf(" Data size is %d \n", (int)size);
@@ -117,7 +100,7 @@ main (void)
         // Now declare memory, everything for first array
         int         data_out[1][dims_out[1]][dims_out[2]]; /* output buffer */
     
-        hsize_t      count[RANK];              /* size of the hyperslab in the file */
+        hsize_t * count = (hsize_t *) malloc(rank*sizeof(int));              /* size of the hyperslab in the file */
         hsize_t      offset[RANK];             /* hyperslab offset in the file */
         hsize_t      count_out[RANK];          /* size of the hyperslab in memory */
         hsize_t      offset_out[RANK];         /* hyperslab offset in memory */
@@ -156,7 +139,7 @@ main (void)
         status = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, offset_out, NULL,
     				 count_out, NULL);
     
-        printf("begin loop\n");
+        //printf("begin loop\n");
         /*
          * Read data from hyperslab in the file into the hyperslab in
          * memory and display.
@@ -164,6 +147,7 @@ main (void)
         //status = H5Dread(dataset, H5T_NATIVE_INT, memspace, dataspace,
     		     //H5P_DEFAULT, data_out);
         for (nimg = 0; nimg < dims_out[0]; nimg++){
+            image_number++;
             // define hyperslab
             offset[0] = nimg;
             //printf("selecting\n");
@@ -193,15 +177,7 @@ main (void)
             fwrite(valbuffer, sizeof(int), dlen, fout);
         }
     }
-    /*
-     * 0 0 0 0 0 0 0
-     * 0 0 0 0 0 0 0
-     * 0 0 0 0 0 0 0
-     * 3 4 5 6 0 0 0
-     * 4 5 6 7 0 0 0
-     * 5 6 7 8 0 0 0
-     * 0 0 0 0 0 0 0
-     */
+    printf("Read %d images\n", image_number);
 
     /*
      * Close/release resources.
