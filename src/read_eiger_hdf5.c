@@ -14,9 +14,10 @@
 
 #include "read_eiger_groups.h"
 
-#define FILENAME        "/home/lhermitte/research/projects/xpcs-aps-chx-project/sample_data/flow10crlT0_EGhtd_011_66/flow10crlT0_EGhtd_011_66_master.h5"
+#define FILENAME        "/home/lhermitte/research/projects/xpcs-aps-chx-project/sample_data/flow10crlT0_EGhtd_011_66/new/flow10crlT0_EGhtd_011_66_master.h5"
 // TODO : add all data sets
-#define DATASET         "entry/data_000001"
+// TODO : get array dims?
+#define DATASET_PREFIX      "entry/data_"
 #define DIM0            1000
 #define ADIM0           1065
 #define ADIM1           1030
@@ -26,12 +27,14 @@ int main (void){
                                                 /* Handles */
     herr_t      status;
     hsize_t     dims[1] = {DIM0},
-                adims[2] = {ADIM0, ADIM1};
+                adims[2] = {ADIM0, ADIM1},
+                tot_dims[3] = {DIM0, ADIM0, ADIM1};
     int         ***rdata,                       /* Read buffer */
                 ndims,
                 i, j, k;
     int         eiger_groups = 0;
     int         ind = 0;
+    char        dataset_name[80];
 
     /*
      * Now we begin the read section of this example.  Here we assume
@@ -47,25 +50,33 @@ int main (void){
     eiger_groups = read_eiger_groups(FILENAME);
     //printf("done \n");
     file = H5Fopen (FILENAME, H5F_ACC_RDONLY, H5P_DEFAULT);
-    for(ind=0; ind < eiger_groups; ind++){
+    for(ind=1; ind <= eiger_groups; ind++){
+        sprintf(dataset_name, "%s%06d", DATASET_PREFIX, ind);
         printf("opening dataset: %d\n", ind);
-        dset = H5Dopen(file, DATASET, H5P_DEFAULT);
+        printf("with name: %s\n", dataset_name);
+        dset = H5Dopen(file, dataset_name, H5P_DEFAULT);
+        printf("done\n");
 
         /*
          * Get the datatype and its dimensions.
          */
         printf("getting file type\n");
         filetype = H5Dget_type (dset);
-        printf("getting dims\n");
-        ndims = H5Tget_array_dims (filetype, adims);
-        printf("dims are %d", ndims);
+        printf("done\n");
+        //printf("filetype : %ld\n", filetype);
+        //printf("getting dims\n");
+        // TODO: get this to work
+        //ndims = H5Tget_array_dims (filetype, tot_dims);
+
+        //printf("dims are %d", ndims);
+
     
         /*
          * Get dataspace and allocate memory for read buffer.  This is a
          * three dimensional dataset when the array datatype is included so
          * the dynamic allocation must be done in steps.
          */
-        space = H5Dget_space (dset);
+        //space = H5Dget_space (dset);
         //ndims = H5Sget_simple_extent_dims (space, dims, NULL);
     
         /*
@@ -99,19 +110,23 @@ int main (void){
         /*
          * Create the memory datatype.
          */
-        memtype = H5Tarray_create (H5T_NATIVE_INT, 2, adims);
+        memtype = H5Tarray_create (H5T_NATIVE_INT, 3, tot_dims);
     
         /*
          * Read the data.
          */
+        printf("reading\n");
         status = H5Dread (dset, memtype, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-                    rdata[0][0]);
+                          rdata[0]);
+        printf("done\n");
 
     }
     /*
      * Output the data to the screen.
+     */
+    /*
     for (i=0; i<dims[0]; i++) {
-        printf ("%s[%d]:\n", DATASET, i);
+        printf ("%s[%d]:\n", dataset_name, i);
         for (j=0; j<adims[0]; j++) {
             printf (" [");
             for (k=0; k<adims[1]; k++)
@@ -120,6 +135,8 @@ int main (void){
         }
         printf("\n");
     }
+    */
+    /*
      */
 
     /*
@@ -129,7 +146,7 @@ int main (void){
     free (rdata[0]);
     free (rdata);
     status = H5Dclose (dset);
-    status = H5Sclose (space);
+    //status = H5Sclose (space);
     status = H5Tclose (filetype);
     status = H5Tclose (memtype);
     status = H5Fclose (file);

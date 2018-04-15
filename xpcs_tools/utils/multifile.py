@@ -1,4 +1,6 @@
 import numpy as np
+import struct
+import os
 
 """    Description:
 
@@ -39,7 +41,7 @@ class Multifile2:
 
     '''
     HEADER_SIZE = 1024
-    def __init__(self, filename, numimgs, mode='rb', nbytes=4):
+    def __init__(self, filename, numimgs, mode='rb', nbytes=2):
         '''
             Prepare a file for reading or writing.
             mode : either 'rb' or 'wb'
@@ -100,7 +102,7 @@ class Multifile2:
             self.frame_indexes.append(cur)
             # first get dlen
             dlen = np.frombuffer(self._fd[cur+152:cur+156], dtype=self._dtype)[0]
-            cur += 1024 + dlen*6
+            cur += 1024 + dlen*(4 + self._nbytes)
         print("done.")
 
 
