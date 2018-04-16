@@ -15,13 +15,117 @@
 #include <stdlib.h>
 
 #define H5FILE_NAME "/home/lhermitte/research/projects/xpcs-aps-chx-project/sample_data/flow10crlT0_EGhtd_011_66/new/flow10crlT0_EGhtd_011_66_master.h5"
-#define DATASETNAME "entry/data_000001"
+#define DATASETPREFIX "entry/data_"
 #define RANK         3
 #define RANK_OUT     3
 
-int
-main (void)
-{
+// Data set strings for the EIGER
+#define WAVELENGTH "entry/instrument/monochromator/wavelength"
+#define BEAM_CENTER_X "entry/instrument/detector/beam_center_x"
+#define BEAM_CENTER_Y "entry/instrument/detector/beam_center_x"
+#define COUNT_TIME "entry/instrument/detector/count_time"
+#define X_PIXEL_SIZE "entry/instrument/detector/x_pixel_size"
+#define Y_PIXEL_SIZE "entry/instrument/detector/y_pixel_size"
+
+
+/*
+ *
+ * In [6]: list(f['entry/instrument/detector'].keys())
+ * Out[6]: 
+ * ["beam_center_x",
+ * "beam_center_y",
+ * "bit_depth_readout",
+ * "count_time",
+ * "countrate_correction_applied",
+ * "description",
+ * "detectorSpecific",
+ * "detector_distance",
+ * "detector_number",
+ * "detector_readout_time",
+ * "efficiency_correction_applied",
+ * "flatfield_correction_applied",
+ * "frame_time",
+ * "pixel_mask_applied",
+ * "sensor_material",
+ * "sensor_thickness",
+ * "threshold_energy",
+ * "virtual_pixel_correction_applied",
+ * "x_pixel_size",
+ * "y_pixel_size"]
+ *
+ */
+
+
+typedef struct multifile_header_t{
+    /* The multifile header (for BNL) is a 1024 byte header
+     * 
+     * with the data in the locations specified below
+     *
+     */
+    // this full struct totals 1024 bytes
+    // the magic is 32 bytes long?
+    int magic[4];
+    double beam_center_x;
+    double beam_center_y;
+    double count_time;
+    double detector_distance;
+    double frame_time;
+    double incident_wavelength;
+    double x_pixel_size;
+    double y_pixel_size;
+    int bytes;
+    int nrows;
+    int ncols;
+    int rows_begin;
+    int rows_end;
+    int cols_begin;
+    int cols_end;
+    char footer[916];
+} multifile_header_t;
+
+
+int read_multifile_header(hid_t file, multifile_header_t * mheader){
+    /* read multifile header
+     *
+     * file : the file id
+     * mheader : the multifile header
+     *
+     */
+    double wavelength, beam_center_x, beam_center_y;
+    hid_t       dataset;         /* handles */
+    herr_t      status;
+
+    printf("Reading wavelength\n");
+    dataset = H5Dopen2(file, WAVELENGTH, H5P_DEFAULT);
+    status = H5Dread(dataset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, 
+                     &(mheader->incident_wavelength));
+    printf("got %lf\n", mheader->incident_wavelength);
+    printf("Reading beam_center_x\n");
+    dataset = H5Dopen2(file, BEAM_CENTER_X, H5P_DEFAULT);
+    status = H5Dread(dataset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, 
+                     &(mheader->beam_center_x));
+    printf("got %lf\n", mheader->beam_center_x);
+    printf("Reading beam_center_y\n");
+    dataset = H5Dopen2(file, BEAM_CENTER_X, H5P_DEFAULT);
+    status = H5Dread(dataset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, 
+                     &(mheader->beam_center_x));
+    printf("got %lf\n", mheader->beam_center_y);
+    printf("Reading x pixel size\n");
+    dataset = H5Dopen2(file, X_PIXEL_SIZE, H5P_DEFAULT);
+    status = H5Dread(dataset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, 
+                     &(mheader->x_pixel_size));
+    printf("got %lf\n", mheader->x_pixel_size);
+    printf("Reading y pixel size\n");
+    dataset = H5Dopen2(file, X_PIXEL_SIZE, H5P_DEFAULT);
+    dataset = H5Dopen2(file, Y_PIXEL_SIZE, H5P_DEFAULT);
+    status = H5Dread(dataset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, 
+                     &(mheader->y_pixel_size));
+    printf("got %lf\n", mheader->y_pixel_size);
+}
+
+int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename){
+    multifile_header_t multifile_header;
+
     hid_t       file, dataset;         /* handles */
     hid_t       datatype, dataspace;
     hid_t       memspace;
@@ -38,12 +142,9 @@ main (void)
     // the output file
     FILE * fout;
     printf("opening file\n");
-    fout = fopen("test.bin", "w");
+    fout = fopen(out_filename, "w");
     printf("done\n");
 
-    char *header = (char *)malloc(1024);
-    // write a dummy header
-    fwrite(header, sizeof(char), 1024, fout);
 
     // 10 MB buffer for pos and val
     int *posbuffer = (int *)malloc(10000000*sizeof(unsigned int));
@@ -56,7 +157,19 @@ main (void)
     /*
      * Open the file and the dataset.
      */
-    file = H5Fopen(H5FILE_NAME, H5F_ACC_RDONLY, H5P_DEFAULT);
+    file = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+
+    // test read header
+
+
+
+    // read header
+    printf("reading multifile header\n");
+    read_multifile_header(file, &multifile_header);
+    printf("done\n");
+
+    // write a dummy header
+    fwrite(&multifile_header, sizeof(multifile_header_t), 1, fout);
 
     char *dataset_name = malloc(80);
     int dset_number;
@@ -64,7 +177,7 @@ main (void)
     image_number = 0;
 
     for (dset_number = 0; dset_number < 10; dset_number++){
-        sprintf(dataset_name, "%s%06d", "entry/data_", dset_number);
+        sprintf(dataset_name, "%s%06d", dataset_prefix, dset_number);
         dataset = H5Dopen2(file, dataset_name, H5P_DEFAULT);
     
         /*
@@ -163,6 +276,9 @@ main (void)
             for (i = 0; i < dims_out[1]; i++) {
                 for (j = 0; j < dims_out[2]; j++){
                     ind = i*dims_out[2] + j;
+                    // the second statement is just checking the data
+                    // is not a bad pixel
+                    // TODO : use the mask
                     if(data_out[0][i][j] != 0 && data_out[0][i][j] < 10000){
                         //printf("dlen %d\n",dlen);
                         posbuffer[dlen] = ind;
@@ -182,6 +298,10 @@ main (void)
     /*
      * Close/release resources.
      */
+    free(posbuffer);
+    free(valbuffer);
+    free(dataset_name);
+    free(count);
     H5Tclose(datatype);
     H5Dclose(dataset);
     H5Sclose(dataspace);
@@ -191,3 +311,32 @@ main (void)
 
     return 0;
 }
+
+/* For testing
+int main(int argc, char ** argv){
+    char * dataset_prefix;
+    char * out_filename;
+    char *filename;
+    if (argc < 2 || argc > 4){
+        printf("Usage : compress_file filename <dataset_prefix> <outfilename>\n");
+        printf("(data_setname defaults to %s\n)", DATASETPREFIX);
+        return -1;
+    }
+    filename = argv[1];
+    if(argc == 3){
+        dataset_prefix = argv[2];
+    }else{
+        dataset_prefix = DATASETPREFIX;
+    }
+    printf("Using dataset prefix %s\n", dataset_prefix);
+    if(argc == 4){
+        out_filename = argv[3];
+    }else{
+        out_filename = "test.bin";
+    }
+    printf("Writing output to filename %s\n", out_filename);
+
+    raw_compress_file(filename, dataset_prefix, out_filename);
+}
+
+*/

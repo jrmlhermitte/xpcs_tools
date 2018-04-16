@@ -15,3 +15,6 @@ read_eiger_groups.o: read_eiger_groups.c
 
 read_eiger_hdf5.o: read_eiger_hdf5.c
 	h5cc -c read_eiger_hdf5.c
+
+compress_file:
+	h5cc -o compress_file compress_file.c
