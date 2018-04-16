@@ -17,4 +17,7 @@ read_eiger_hdf5.o: read_eiger_hdf5.c
 	h5cc -c read_eiger_hdf5.c
 
 compress_file:
-	h5cc -o compress_file compress_file.c
+	#h5cc -o compress_file compress_file.c
+	cythonize compress_file.pyx
+	LD_LIBRARY_PATH=/home/lhermitte/miniconda3/envs/py3/lib h5cc -shared -o compress_file.so -I/home/lhermitte/miniconda3/include/python3.6m  compress_file.c
+

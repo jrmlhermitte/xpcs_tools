@@ -141,7 +141,7 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
 
     // the output file
     FILE * fout;
-    printf("opening file\n");
+    printf("opening file : %s\n", filename);
     fout = fopen(out_filename, "w");
     printf("done\n");
 
@@ -169,13 +169,28 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
     printf("done\n");
 
     // write a dummy header
+    printf("writing header\n");
     fwrite(&multifile_header, sizeof(multifile_header_t), 1, fout);
+    printf("done\n");
 
     char *dataset_name = malloc(80);
     int dset_number;
     int image_number;
     image_number = 0;
+    
+    // Now declare memory, everything for first array
+    printf("allocating memory for data\n");
+    int         data_out[1][dims_out[1]][dims_out[2]]; /* output buffer */
+    printf("done\n");
 
+    hsize_t * count = (hsize_t *) malloc(rank*sizeof(int));              /* size of the hyperslab in the file */
+    hsize_t      offset[RANK];             /* hyperslab offset in the file */
+    hsize_t      count_out[RANK];          /* size of the hyperslab in memory */
+    hsize_t      offset_out[RANK];         /* hyperslab offset in memory */
+    int nimg;
+    int ind;
+
+    printf("iterating\n");
     for (dset_number = 0; dset_number < 10; dset_number++){
         sprintf(dataset_name, "%s%06d", dataset_prefix, dset_number);
         dataset = H5Dopen2(file, dataset_name, H5P_DEFAULT);
@@ -210,15 +225,6 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
     	   (unsigned long)(dims_out[0]), (unsigned long)(dims_out[1]),
            (unsigned long)(dims_out[2]));
     
-        // Now declare memory, everything for first array
-        int         data_out[1][dims_out[1]][dims_out[2]]; /* output buffer */
-    
-        hsize_t * count = (hsize_t *) malloc(rank*sizeof(int));              /* size of the hyperslab in the file */
-        hsize_t      offset[RANK];             /* hyperslab offset in the file */
-        hsize_t      count_out[RANK];          /* size of the hyperslab in memory */
-        hsize_t      offset_out[RANK];         /* hyperslab offset in memory */
-        int nimg;
-        int ind;
     
         /*
          * Define hyperslab in the dataset.
@@ -259,7 +265,9 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
          */
         //status = H5Dread(dataset, H5T_NATIVE_INT, memspace, dataspace,
     		     //H5P_DEFAULT, data_out);
+        printf("begin image read\n");
         for (nimg = 0; nimg < dims_out[0]; nimg++){
+            printf("reading image # %d\n",nimg);
             image_number++;
             // define hyperslab
             offset[0] = nimg;
@@ -312,7 +320,6 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
     return 0;
 }
 
-/* For testing
 int main(int argc, char ** argv){
     char * dataset_prefix;
     char * out_filename;
@@ -339,4 +346,3 @@ int main(int argc, char ** argv){
     raw_compress_file(filename, dataset_prefix, out_filename);
 }
 
-*/
