@@ -116,7 +116,6 @@ int read_multifile_header(hid_t file, multifile_header_t * mheader){
                      &(mheader->x_pixel_size));
     printf("got %lf\n", mheader->x_pixel_size);
     printf("Reading y pixel size\n");
-    dataset = H5Dopen2(file, X_PIXEL_SIZE, H5P_DEFAULT);
     dataset = H5Dopen2(file, Y_PIXEL_SIZE, H5P_DEFAULT);
     status = H5Dread(dataset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, 
                      &(mheader->y_pixel_size));
@@ -135,8 +134,8 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
 				        * size of the data element
 				        * stored in file
 				        */
-    hsize_t     dimsm[RANK];              /* memory space dimensions */
-    hsize_t     dims_out[RANK];           /* dataset dimensions */
+    hsize_t     dimsm[3];   /* memory space dimensions */
+    hsize_t     dims[3];    /* dataset dimensions */
     herr_t      status;
 
     // the output file
@@ -150,80 +149,74 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
     int *posbuffer = (int *)malloc(10000000*sizeof(unsigned int));
     int *valbuffer = (int *)malloc(10000000*sizeof(unsigned short int));
     int dlen;
+    int     i, j, k, status_n, rank;
 
-
-    int          i, j, k, status_n, rank;
+    char *dataset_name = malloc(80);
+    int dset_number;
+    int image_number;
 
     /*
      * Open the file and the dataset.
      */
     file = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
 
-    // test read header
-
-
-
     // read header
     printf("reading multifile header\n");
     read_multifile_header(file, &multifile_header);
     printf("done\n");
 
-    // write a dummy header
+    // write the header
     printf("writing header\n");
     fwrite(&multifile_header, sizeof(multifile_header_t), 1, fout);
     printf("done\n");
 
-    char *dataset_name = malloc(80);
-    int dset_number;
-    int image_number;
-    image_number = 0;
+    // TODO : make a function
+    // just try first number to get dimensions of data set
+    sprintf(dataset_name, "%s%06d", dataset_prefix, 0);
+    printf("grabbing dataset %s\n", dataset_name);
+    dataset = H5Dopen2(file, dataset_name, H5P_DEFAULT);
+
+    /*
+     * Get datatype and dataspace handles and then query
+     * dataset class, order, size, rank and dimensions.
+     */
+    datatype  = H5Dget_type(dataset);     /* datatype handle */
+    t_class     = H5Tget_class(datatype);
+
+    size  = H5Tget_size(datatype);
+    printf(" Data size is %d \n", (int)size);
+
+    dataspace = H5Dget_space(dataset);    /* dataspace handle */
+    rank      = H5Sget_simple_extent_ndims(dataspace);
+    status_n  = H5Sget_simple_extent_dims(dataspace, dims, NULL);
+    printf("rank %d, dimensions %lu x %lu x %lu \n", rank,
+	   (unsigned long)(dims[0]), (unsigned long)(dims[1]),
+       (unsigned long)(dims[2]));
+
     
     // Now declare memory, everything for first array
     printf("allocating memory for data\n");
-    int         data_out[1][dims_out[1]][dims_out[2]]; /* output buffer */
+    // interesting. if i made a 1D array this is slower
+    int data_out[1][dims[1]][dims[2]]; /* output buffer */
+    //int *data_out = (int *)malloc(dims[1]*dims[2]*sizeof(int)); /* output buffer */
     printf("done\n");
 
-    hsize_t * count = (hsize_t *) malloc(rank*sizeof(int));              /* size of the hyperslab in the file */
-    hsize_t      offset[RANK];             /* hyperslab offset in the file */
-    hsize_t      count_out[RANK];          /* size of the hyperslab in memory */
-    hsize_t      offset_out[RANK];         /* hyperslab offset in memory */
-    int nimg;
-    int ind;
+    hsize_t *count = (hsize_t *)malloc(rank*sizeof(int));              /* size of the hyperslab in the file */
+    hsize_t  offset[rank];             /* hyperslab offset in the file */
+    hsize_t  count_out[3];          /* size of the hyperslab in memory */
+    hsize_t  offset_out[3];         /* hyperslab offset in memory */
 
+
+    int nimg; // to iterate over image number
+    int ind;
     printf("iterating\n");
+    image_number = 0;
     for (dset_number = 0; dset_number < 10; dset_number++){
         sprintf(dataset_name, "%s%06d", dataset_prefix, dset_number);
+        //printf("grabbing dataset %s\n", dataset_name);
         dataset = H5Dopen2(file, dataset_name, H5P_DEFAULT);
     
-        /*
-         * Get datatype and dataspace handles and then query
-         * dataset class, order, size, rank and dimensions.
-         */
-        datatype  = H5Dget_type(dataset);     /* datatype handle */
-        t_class     = H5Tget_class(datatype);
-        /*
-        if (t_class == H5T_INTEGER){
-            printf("Data set has INTEGER type \n");
-        }else{
-            printf("Warning, not INTEGER type.\n");
-        }
-        order     = H5Tget_order(datatype);
-        if (order == H5T_ORDER_LE){
-            printf("Little endian order \n");
-        }else{
-            printf("Not Little endian order \n");
-        }
-        */
-    
-        size  = H5Tget_size(datatype);
-        printf(" Data size is %d \n", (int)size);
-    
         dataspace = H5Dget_space(dataset);    /* dataspace handle */
-        rank      = H5Sget_simple_extent_ndims(dataspace);
-        status_n  = H5Sget_simple_extent_dims(dataspace, dims_out, NULL);
-        printf("rank %d, dimensions %lu x %lu x %lu \n", rank,
-    	   (unsigned long)(dims_out[0]), (unsigned long)(dims_out[1]),
-           (unsigned long)(dims_out[2]));
     
     
         /*
@@ -233,18 +226,20 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
         offset[1] = 0;
         offset[2] = 0;
         count[0]  = 1;
-        count[1]  = dims_out[1];
-        count[2]  = dims_out[2];
+        count[1]  = dims[1];
+        count[2]  = dims[2];
         //status = H5Sselect_hyperslab(dataspace, H5S_SELECT_SET, offset, NULL,
     				                 //count, NULL);
     
         /*
          * Define the memory dataspace.
          */
+        // flatten
         dimsm[0] = 1;
-        dimsm[1] = dims_out[1];
-        dimsm[2] = dims_out[2];
-        memspace = H5Screate_simple(rank, dimsm, NULL);
+        dimsm[1] = dims[1];
+        dimsm[2] = dims[2];
+        // rank, dims, ...
+        memspace = H5Screate_simple(3, dimsm, NULL);
     
         /*
          * Define memory hyperslab.
@@ -253,10 +248,10 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
         offset_out[1] = 0;
         offset_out[2] = 0;
         count_out[0]  = 1;
-        count_out[1]  = dims_out[1];
-        count_out[2]  = dims_out[2];
+        count_out[1]  = dimsm[1];
+        count_out[2]  = dimsm[2];
         status = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, offset_out, NULL,
-    				 count_out, NULL);
+    				                 count_out, NULL);
     
         //printf("begin loop\n");
         /*
@@ -266,14 +261,14 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
         //status = H5Dread(dataset, H5T_NATIVE_INT, memspace, dataspace,
     		     //H5P_DEFAULT, data_out);
         printf("begin image read\n");
-        for (nimg = 0; nimg < dims_out[0]; nimg++){
-            printf("reading image # %d\n",nimg);
+        for (nimg = 0; nimg < dims[0]; nimg++){
+            //printf("reading image # %d\n",nimg);
             image_number++;
             // define hyperslab
             offset[0] = nimg;
             //printf("selecting\n");
             status = H5Sselect_hyperslab(dataspace, H5S_SELECT_SET, offset, NULL,
-    				    count, NULL);
+    				                     count, NULL);
             // now read
             //printf("reading\n");
             status = H5Dread(dataset, H5T_NATIVE_INT, memspace, dataspace,
@@ -281,9 +276,9 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
             //printf("done reading\n");
             // reset dlen
             dlen = 0;
-            for (i = 0; i < dims_out[1]; i++) {
-                for (j = 0; j < dims_out[2]; j++){
-                    ind = i*dims_out[2] + j;
+            for (i = 0; i < dimsm[1]; i++) {
+                for (j = 0; j < dimsm[2]; j++) {
+                    ind = i*dimsm[2] + j;
                     // the second statement is just checking the data
                     // is not a bad pixel
                     // TODO : use the mask
