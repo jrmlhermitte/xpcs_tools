@@ -7,6 +7,9 @@
 avg_multi:
 	gcc -o avg_multi avg_multi.c -Wall
 
+avg_multi_bnl:
+	gcc -o avg_multi_bnl avg_multi_bnl.c -Wall
+
 read_hdf5: read_eiger_groups.o read_eiger_hdf5.o
 	h5cc read_eiger_groups.o read_eiger_hdf5.o -o read_eiger_hdf5
 

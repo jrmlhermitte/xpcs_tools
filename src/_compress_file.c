@@ -26,6 +26,7 @@
 #define COUNT_TIME "entry/instrument/detector/count_time"
 #define X_PIXEL_SIZE "entry/instrument/detector/x_pixel_size"
 #define Y_PIXEL_SIZE "entry/instrument/detector/y_pixel_size"
+#define FRAME_TIME  "entry/instrument/detector/frame_time"
 
 
 /*
@@ -55,6 +56,12 @@
  *
  */
 
+
+// struct used to count groups and keep track of results
+typedef struct hdf5EigerDatasetInfo {
+    int cnt;
+    int max;
+} hdf5EigerDatasetInfo;
 
 typedef struct multifile_header_t{
     /* The multifile header (for BNL) is a 1024 byte header
@@ -120,9 +127,43 @@ int read_multifile_header(hid_t file, multifile_header_t * mheader){
     status = H5Dread(dataset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, 
                      &(mheader->y_pixel_size));
     printf("got %lf\n", mheader->y_pixel_size);
+    printf("Reading frame time\n");
+    dataset = H5Dopen2(file, FRAME_TIME, H5P_DEFAULT);
+    status = H5Dread(dataset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, 
+                     &(mheader->frame_time));
+    printf("got %lf\n", mheader->frame_time);
+    // set bytes to 2
+    mheader->bytes = 2;
+
 }
 
-int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename){
+herr_t count_groups(hid_t loc_id, const char *name, const H5L_info_t *info,
+                    void *op_data)
+{
+    /* Count the number of groups in a dataset
+     * This is iterated over by H5Literate
+     */
+    herr_t          status;
+    H5O_info_t      infobuf;
+    int dset_num;
+    hdf5EigerDatasetInfo *h5edp = (hdf5EigerDatasetInfo *)op_data;
+
+    if(strncmp(name, "data_", 5) == 0){
+        h5edp->cnt += 1;
+        dset_num = atoi(name+5);
+        if(dset_num > h5edp->max){
+            h5edp->max = dset_num;
+        }
+        printf("Dataset: %s\n",name);
+        printf("max num: %d\n",h5edp->max);
+        printf("tot num: %d\n",h5edp->cnt);
+    }
+
+    return 0;
+}
+
+int raw_compress_file(char * filename, char *dataset_root,
+                      char *dataset_prefix, char *out_filename){
     multifile_header_t multifile_header;
 
     hid_t       file, dataset;         /* handles */
@@ -146,7 +187,7 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
 
     // 10 MB buffer for pos and val
     int *posbuffer = (int *)malloc(10000000*sizeof(unsigned int));
-    int *valbuffer = (int *)malloc(10000000*sizeof(unsigned short int));
+    unsigned short int *valbuffer = (unsigned short int *)malloc(10000000*sizeof(unsigned short int));
     int dlen;
     int     i, j, k, status_n, rank;
 
@@ -154,24 +195,29 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
     int dset_number;
     int image_number;
 
+    hdf5EigerDatasetInfo h5ed; // hdf5 Eiger dataset info function
+    h5ed.cnt = 0;
+    h5ed.max = 0;
+
     /*
      * Open the file and the dataset.
      */
     file = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+
+    // count number of groups
+    status = H5Literate_by_name (file, dataset_root, H5_INDEX_NAME,
+                                 H5_ITER_NATIVE, NULL, count_groups, &h5ed,
+                                 H5P_DEFAULT);
 
     // read header
     printf("reading multifile header\n");
     read_multifile_header(file, &multifile_header);
     printf("done\n");
 
-    // write the header
-    printf("writing header\n");
-    fwrite(&multifile_header, sizeof(multifile_header_t), 1, fout);
-    printf("done\n");
 
     // TODO : make a function
     // just try first number to get dimensions of data set
-    sprintf(dataset_name, "%s%06d", dataset_prefix, 0);
+    sprintf(dataset_name, "%s%06d", dataset_prefix, 1);
     printf("grabbing dataset %s\n", dataset_name);
     dataset = H5Dopen2(file, dataset_name, H5P_DEFAULT);
 
@@ -192,21 +238,31 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
 	   (unsigned long)(dims[0]), (unsigned long)(dims[1]),
        (unsigned long)(dims[2]));
 
+    multifile_header.nrows = dims[1];
+    multifile_header.rows_begin = 0;
+    multifile_header.rows_end = dims[1];
+    multifile_header.ncols = dims[2];
+    multifile_header.cols_begin = 0;
+    multifile_header.cols_end = dims[2];
+    // write the header
+    printf("writing header\n");
+    fwrite(&multifile_header, sizeof(multifile_header_t), 1, fout);
+    printf("done\n");
     
     // Now declare memory, everything for first array
     printf("allocating memory for data\n");
     // interesting. if i made a 1D array this is slower
-    //int data_out[1][dims[1]][dims[2]]; /* output buffer */
-    int data_out[dims[1]*dims[2]]; /* output buffer */
+    int data_out[1][dims[1]][dims[2]]; /* output buffer */
+    //int data_out[dims[1]*dims[2]]; /* output buffer */
     //int *data_out = (int *)malloc(dims[1]*dims[2]*sizeof(int)); /* output buffer */
     printf("done\n");
 
     hsize_t *count = (hsize_t *)malloc(rank*sizeof(int));              /* size of the hyperslab in the file */
     hsize_t  offset[rank];             /* hyperslab offset in the file */
 
-    hsize_t     dimsm[1];   /* memory space dimensions */
-    hsize_t  count_out[1];          /* size of the hyperslab in memory */
-    hsize_t  offset_out[1];         /* hyperslab offset in memory */
+    hsize_t     dimsm[3];   /* memory space dimensions */
+    hsize_t  count_out[3];          /* size of the hyperslab in memory */
+    hsize_t  offset_out[3];         /* hyperslab offset in memory */
 
 
     int nimg; // to iterate over image number
@@ -229,26 +285,27 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
      * Define the memory dataspace.
      */
     // flatten
-    dimsm[0] = dims[1]*dims[2];
-    //dimsm[1] = dims[1];
-    //dimsm[2] = dims[2];
+    dimsm[0] = 1;
+    dimsm[1] = dims[1];
+    dimsm[2] = dims[2];
     // rank, dims, ...
-    memspace = H5Screate_simple(1, dimsm, NULL);
+    memspace = H5Screate_simple(3, dimsm, NULL);
 
     /*
      * Define memory hyperslab.
      */
     offset_out[0] = 0;
-    //offset_out[1] = 0;
-    //offset_out[2] = 0;
-    count_out[0]  = dimsm[0];
-    //count_out[0]  = 1;
-    //count_out[1]  = dimsm[1];
-    //count_out[2]  = dimsm[2];
+    offset_out[1] = 0;
+    offset_out[2] = 0;
+    //count_out[0]  = dimsm[0];
+    count_out[0]  = 1;
+    count_out[1]  = dimsm[1];
+    count_out[2]  = dimsm[2];
     status = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, offset_out, NULL,
 				                 count_out, NULL);
     
-    for (dset_number = 0; dset_number < 10; dset_number++){
+    printf("Found %d data sets.\n", h5ed.cnt);
+    for (dset_number = 1; dset_number < h5ed.cnt+1; dset_number++){
         sprintf(dataset_name, "%s%06d", dataset_prefix, dset_number);
         //printf("grabbing dataset %s\n", dataset_name);
         dataset = H5Dopen2(file, dataset_name, H5P_DEFAULT);
@@ -279,32 +336,24 @@ int raw_compress_file(char * filename, char *dataset_prefix, char *out_filename)
             //printf("done reading\n");
             // reset dlen
             dlen = 0;
-            for (i = 0; i < dimsm[0]; i++) {
-            //for (i = 0; i < dimsm[1]; i++) {
-                //for (j = 0; j < dimsm[2]; j++) {
-                    ind = i*dimsm[2] + j;
+            for (i = 0; i < dimsm[1]; i++) {
+                for (j = 0; j < dimsm[2]; j++) {
                     // the second statement is just checking the data
                     // is not a bad pixel
                     // TODO : use the mask
-                    //if(data_out[0][i][j] != 0 && data_out[0][i][j] < 10000){
-                        ////printf("dlen %d\n",dlen);
-                        //posbuffer[dlen] = ind;
-                        //valbuffer[dlen] = data_out[0][i][j];
-                        //dlen++;
-                    //}
-                    if(data_out[i] != 0 && data_out[i] < 10000){
+                    if(data_out[0][i][j] != 0 && data_out[0][i][j] < 10000){
+                        ind = i*dimsm[2] + j;
                         //printf("dlen %d\n",dlen);
-                        posbuffer[dlen] = i;
-                        valbuffer[dlen] = data_out[i];
+                        posbuffer[dlen] = ind;
+                        valbuffer[dlen] = data_out[0][i][j];
                         dlen++;
                     }
+                }
             }
-                //}
-            //}
             //printf("dlen : %d\n", dlen);
             fwrite(&dlen, sizeof(int), 1, fout);
             fwrite(posbuffer, sizeof(int), dlen, fout);
-            fwrite(valbuffer, sizeof(int), dlen, fout);
+            fwrite(valbuffer, sizeof(unsigned short int), dlen, fout);
         }
     }
     printf("Read %d images\n", image_number);
@@ -349,6 +398,6 @@ int main(int argc, char ** argv){
     }
     printf("Writing output to filename %s\n", out_filename);
 
-    raw_compress_file(filename, dataset_prefix, out_filename);
+    raw_compress_file(filename, "/entry", dataset_prefix, out_filename);
 }
 

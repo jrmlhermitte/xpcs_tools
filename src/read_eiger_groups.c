@@ -80,27 +80,6 @@ herr_t count_groups(hid_t loc_id, const char *name, const H5L_info_t *info,
         //printf("max num: %d\n",h5edp->max);
         //printf("tot num: %d\n",h5edp->cnt);
     }
-    /*
-     * Get type of the object and display its name and type.
-     * The name of the object is passed to this function by
-     * the Library.
-     */
-    /* Just an example:
-    status = H5Oget_info_by_name (loc_id, name, &infobuf, H5P_DEFAULT);
-    switch (infobuf.type) {
-        case H5O_TYPE_GROUP:
-            printf ("  Group: %s\n", name);
-            break;
-        case H5O_TYPE_DATASET:
-            printf ("  Dataset: %s\n", name);
-            break;
-        case H5O_TYPE_NAMED_DATATYPE:
-            printf ("  Datatype: %s\n", name);
-            break;
-        default:
-            printf ( "  Unknown: %s\n", name);
-    }
-    */
 
     return 0;
 }
